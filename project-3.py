@@ -15,6 +15,10 @@ import numpy as np
 import pandas as pd
 import nltk
 import re
+import string
+import matplotlib.pyplot as plt
+from sklearn.model_selection import GridSearchCV
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from sklearn.feature_extraction.text import TfidfTransformer
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -24,10 +28,13 @@ from nltk.stem import PorterStemmer
 from nltk.stem import WordNetLemmatizer
 from sklearn.naive_bayes import GaussianNB
 from sklearn.naive_bayes import MultinomialNB
+from sklearn.model_selection import StratifiedKFold
 from sklearn import svm
+from sklearn.pipeline import Pipeline
 from sklearn.metrics import classification_report
 from nltk.corpus import stopwords
 from nltk.tokenize import sent_tokenize, word_tokenize
+from sklearn.metrics import classification_report, accuracy_score
 
 nltk.download('stopwords')
 nltk.download('vader_lexicon')
@@ -41,15 +48,15 @@ nltk.download('wordnet')
 # Load the dataset
 train = pd.read_csv('/content/sample_data/train.txt', sep='\t', names=['title', 'from', 'genre', 'director', 'plot'])
 
-x_train = train['genre']
-y_train = train['plot']
+X = train['plot']
+y = train['genre']
 #x_test = test['title', 'form', 'director', 'plot']
 
 
 # Inspect the first few rows
 print(train.head())
 
-"""# 2. Pre-processing"""
+"""# 3. Pre-processing"""
 
 # Pre-processing elements
 
@@ -58,14 +65,10 @@ including = ['no', 'nor', 'not', 'but', 'against', 'only']
 lemmatizer = WordNetLemmatizer()
 stemmer = PorterStemmer()
 
-# def processSentence(s):
-#     words=re.split("\\s+",s)
-#     stemmed_words=[porter_stemmer.stem(word=w) for w in words]
-#     return ' '.join(stemmed_words)
-
 def apply_preprocessing(text):
 
   lowered = text.lower()
+  # Remove everything that is not a word or inside parenthesis
   lowered_re = re.sub(r'\(.*?\)|[^a-zA-Z\s]', '', lowered)
   tokens = word_tokenize(lowered_re, "english")
 
@@ -83,7 +86,50 @@ def apply_preprocessing(text):
 
 
 # Apply preprocessing
-y_train = y_train.apply(apply_preprocessing)
+X = X.apply(apply_preprocessing)
+
+# spliting the data
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.125, random_state=1)
 
 
-print(y_train[0])
+
+print(X.head())
+
+"""# 4. Apply Naive Bayes"""
+
+# Create a pipeline with custom tokenizer
+nb_pipeline = Pipeline([
+    ('vect', CountVectorizer()),
+    ('tfidf', TfidfTransformer()),
+    ('clf', MultinomialNB()),
+])
+
+# Parameters for grid search
+parameters = {
+    'vect__max_features': [1000, 3000, 5000, 10000, 15000, 20000],
+    'tfidf__use_idf': [True, False],
+    'clf__alpha': [0.1, 0.2, 0.5, 1.0],
+}
+
+# Stratified K-Fold cross-validation
+skf = StratifiedKFold(n_splits=3)
+
+# Perform Grid Search
+grid_search = GridSearchCV(nb_pipeline, parameters, cv=skf)
+grid_search.fit(X_train, y_train)
+
+"""# 5. Evaluation
+
+"""
+
+# Get the best classifier and make predictions
+best_classifier = grid_search.best_estimator_
+y_test_pred = best_classifier.predict(X_test)
+
+# Display best parameters
+print(grid_search.best_params_)
+
+# Classification report and accuracy score
+print("Classification Report:")
+print(classification_report(y_test, y_test_pred))
+print("Accuracy Score:", accuracy_score(y_test, y_test_pred))
